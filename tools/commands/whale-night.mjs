@@ -109,13 +109,16 @@ function makePlan() {
   // 还没结束的窗口（跨午夜窗口：任何时刻要么在窗口内、要么在今天开场前 → 都算开放）
   const open = WINDOWS.filter((w) => w.wrap ? true : w.end > now)
   if (!open.length) return { date: today(), action: 'done', done: true, wakes: done, reason: '今天的窗口都过完了' }
-  // ⚠️ 2026-10-20：**这一夜的"不看"已经投递过了** → 直接 done，别再排（她会反复被叫醒 ✗）
-  if (st?.date === today() && st.action === 'skip' && st.fired === true) {
-    return { date: today(), action: 'done', done: true, wakes: done, reason: '这一夜的「不看」已经处理过 ✓' }
-  }
+  // ⚠️ 2026-10-20：**这一夜的「不看」已经投递过** → 那个窗口别再排（防反复叫醒 ✗）
+  //   2026-10-21 修（外部审计 #12）：原先是【直接 done 整天】✗
+  //     → 多窗口时，一个窗口掷到"不看"，当天剩下的窗口全被掐死，只跑第一个就停 ✗
+  //     现在改成【只排除被跳过的那个窗口】✓ 其它窗口照常 ✓
+  const skippedLabel = (st?.date === today() && st.action === 'skip' && st.fired === true)
+    ? String(st.skipWindow ?? st.window ?? '')
+    : ''
   // 每个窗口能醒 w.wakes 次；usedCount 记今天每个窗口已经【真正看过】几次
   const usedCount = st.date === today() && st.usedCount && typeof st.usedCount === 'object' ? { ...st.usedCount } : {}
-  const byUsed = (list) => list.filter((w) => (usedCount[w.label] ?? 0) < w.wakes)
+  const byUsed = (list) => list.filter((w) => (usedCount[w.label] ?? 0) < w.wakes && w.label !== skippedLabel)
   const pool = byUsed(open)
   if (!pool.length) return { date: today(), action: 'done', done: true, wakes: done, reason: '所有窗口的醒来次数都用完了' }
   // ── 2026-10-21：**挑最近时段的下一个窗口**（原来是从池子里随机挑一个 ✗）──────
@@ -154,7 +157,8 @@ function makePlan() {
 
   if (Math.random() < Number(cfg.skipChance ?? 0.3)) {
     return {
-      date: today(), action: 'skip', fired: false, wakes: done, usedCount, window: w.label, endAt: w.end, withinWindow,
+      // skipWindow：2026-10-21 加 —— 只作废这一个窗口，不当作废整天 ✗
+      date: today(), action: 'skip', fired: false, skipWindow: w.label, wakes: done, usedCount, window: w.label, endAt: w.end, withinWindow,
       at, atText: hhmm(at),   // 不看也要"到点"✓（scheduler 会等到 at 才叫醒）
       reason: `这次不想看（掷骰子掷到了「不看」那 ${Math.round((Number(cfg.skipChance ?? 0.3)) * 100)}%）`,
     }

@@ -22,7 +22,6 @@
     "tools",
     "cordis.patch.yml",
     "README.md",
-    "persona.example.md",
     "examples"
   ],
   "dsh": {

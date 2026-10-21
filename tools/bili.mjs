@@ -37,7 +37,9 @@ const map = {
   // —— 写（会真的发出去；都必须显式 --dry 或 --go） ——
   'dm-await': ['commands/dm-await.mjs', '私信监听（只认主人；命中打印 DM_HIT）'],
   fav: ['commands/fav.mjs', '收藏（我想留着）：判据强制 · --list / --check / <BV> --reason … --dry|--go'],
-  dm: ['commands/dm.mjs', '私信（专属通道）：一天 1 条 · 只发主人 · 必须互关（都写死）'],
+  // 2026-10-21 修（外部审计 #11）：原来写"一天 1 条"是错的 —— 实际是"一天只锁定 1 个
+  //   收信人"，对这个人的条数不限（见 dm.mjs 的三道闸）
+  dm: ['commands/dm.mjs', '私信（专属通道）：一天只锁定 1 个收信人（对这个人数不限）· 只发主人 · 必须互关'],
   comment: ['commands/comment.mjs', '发一条视频评论；带 --root/--parent 就是二级回复'],
   'reply-draft': ['commands/reply-draft.mjs', '待审回复（B 档：发前审核）：add 进队列 / list / drop / take'],
   'comment-del': ['commands/comment-del.mjs', '删除自己发的一条评论（x/v2/reply/del，只能删自己的）'],
@@ -45,11 +47,10 @@ const map = {
   'dynamic-image': ['commands/dynamic-image.mjs', '发图文动态（上传图片 + 可带 @节点）'],
   'dynamic-edit': ['commands/edit-dynamic.mjs', '编辑已存在的动态（文字/图片都能改，id 不变、评论与点赞保留）：<dyn_id> <文本文件> [--go]'],
   danmaku: ['commands/danmaku.mjs', '直播间弹幕：pre 预检 / send 发送 / history 回读 / live 实时流'],
-  auto: ['commands/danmaku-auto.mjs', '直播间自动回复：进程内监听+判断+发送（不再依赖 agent 回合）'],
+  // 2026-10-21 修（外部审计 #4）：auto / dyn-keywords / dyn-page 三条指向的文件
+  //   根本不在包里 → 一跑就"找不到脚本"。删掉，别在 help 里骗人 ✗
   await: ['commands/danmaku-await.mjs', '直播间"叫我起床"：出现该回的弹幕就退出，交给 agent 回（质量优先）'],
   // —— 排查 ——
-  'dyn-keywords': ['diagnostics/dyn-detail-keywords.mjs', '在动态详情响应里搜关键词（定位文本去哪了）'],
-  'dyn-page': ['diagnostics/dyn-page-keywords.mjs', '在动态页面 HTML 里搜关键词'],
 }
 
 const [cmd, ...rest] = process.argv.slice(2)
