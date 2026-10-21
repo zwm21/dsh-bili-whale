@@ -29,8 +29,12 @@ if (!roomArg) { console.error('需要 --room <房间号>'); process.exit(2) }
 const credPath = path.join((process.env.USERPROFILE || process.env.HOME || '/'), '.bili-ai', 'credentials.json')
 if (!fs.existsSync(credPath)) { console.error(`缺少凭据文件: ${credPath}`); process.exit(3) }
 const cred = JSON.parse(fs.readFileSync(credPath, 'utf8'))
-for (const k of ['sessdata', 'bili_jct', 'buvid3']) {
+// 2026-10-21：buvid3 改为可选（B站 大部分接口不需要它；缺了不该直接 exit 3 ✗）
+for (const k of ['sessdata', 'bili_jct']) {
   if (!cred[k] || String(cred[k]).trim() === '') { console.error(`凭据文件缺少 ${k}`); process.exit(3) }
+}
+if (!cred.buvid3 || String(cred.buvid3).trim() === '') {
+  console.error('⚠️ 没有 buvid3（不影响使用；个别接口可能被风控）—— 想补就 F12 → Cookies 复制')
 }
 const cookieHeader = `SESSDATA=${cred.sessdata}; bili_jct=${cred.bili_jct}; buvid3=${cred.buvid3}`
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
@@ -138,7 +142,12 @@ if (mode === 'send') {
   const hints = { 0: '成功', '-101': '账号未登录', '-111': 'csrf 校验失败', '-400': '请求错误/缺参数', 1003212: '超出长度限制', 10031: '发送频率过快' }
   console.log(`  HTTP ${out.status}  code=${b.code} ${b.message ?? b.msg ?? ''}`)
   console.log(`  ${hints[b.code] ?? ''}`)
-  if (b.code !== 0) console.log(`  原始: ${JSON.stringify(b).slice(0, 300)}`)
+  if (b.code !== 0) {
+    console.log(`  原始: ${JSON.stringify(b).slice(0, 300)}`)
+    // 2026-10-21 修（外部审计 #7）：发送失败必须非 0 退出 ——
+    //   否则 agent 拿到 exit 0 会当成"发出去了"，然后去 thread 复核才发现没有 ✗
+    process.exit(4)
+  }
   process.exit(0)
 }
 

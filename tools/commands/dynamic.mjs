@@ -7,6 +7,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+// 2026-10-21 修（外部审计）：下面 --go 路径里调了 gate()，但从来没导入过 ✗
+//   一跑到那儿就是 ReferenceError（danmaku.mjs 早就踩过同一个坑，这次补齐三条）
+import { gate } from '../lib/quota-gate.mjs'
 
 const argv = process.argv.slice(2)
 const mode = argv[0]
@@ -23,8 +26,12 @@ const dynId = args.get('id')
 const credPath = path.join((process.env.USERPROFILE || process.env.HOME || '/'), '.bili-ai', 'credentials.json')
 if (!fs.existsSync(credPath)) { console.error(`缺少凭据文件: ${credPath}`); process.exit(3) }
 const cred = JSON.parse(fs.readFileSync(credPath, 'utf8'))
-for (const k of ['sessdata', 'bili_jct', 'buvid3']) {
+// 2026-10-21：buvid3 改为可选（B站 大部分接口不需要它；缺了不该直接 exit 3 ✗）
+for (const k of ['sessdata', 'bili_jct']) {
   if (!cred[k] || String(cred[k]).trim() === '') { console.error(`凭据文件缺少 ${k}`); process.exit(3) }
+}
+if (!cred.buvid3 || String(cred.buvid3).trim() === '') {
+  console.error('⚠️ 没有 buvid3（不影响使用；个别接口可能被风控）—— 想补就 F12 → Cookies 复制')
 }
 const cookieHeader = `SESSDATA=${cred.sessdata}; bili_jct=${cred.bili_jct}; buvid3=${cred.buvid3}`
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'

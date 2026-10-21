@@ -9,6 +9,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+// 2026-10-21 修（外部审计）：下面 --go 路径里调了 gate()，但从来没导入过 ✗
+//   一跑到那儿就是 ReferenceError（danmaku.mjs 早就踩过同一个坑，这次补齐三条）
+import { gate } from '../lib/quota-gate.mjs'
 
 const argv = process.argv.slice(2)
 const args = new Map()
@@ -70,8 +73,12 @@ if (!dims) { console.error('✗ 没解析出尺寸，无法组装 pics'); proces
 const credPath = path.join((process.env.USERPROFILE || process.env.HOME || '/'), '.bili-ai', 'credentials.json')
 if (!fs.existsSync(credPath)) { console.error(`缺少凭据文件: ${credPath}`); process.exit(3) }
 const cred = JSON.parse(fs.readFileSync(credPath, 'utf8'))
-for (const k of ['sessdata', 'bili_jct', 'buvid3']) {
+// 2026-10-21：buvid3 改为可选（B站 大部分接口不需要它；缺了不该直接 exit 3 ✗）
+for (const k of ['sessdata', 'bili_jct']) {
   if (!cred[k] || String(cred[k]).trim() === '') { console.error(`凭据文件缺少 ${k}`); process.exit(3) }
+}
+if (!cred.buvid3 || String(cred.buvid3).trim() === '') {
+  console.error('⚠️ 没有 buvid3（不影响使用；个别接口可能被风控）—— 想补就 F12 → Cookies 复制')
 }
 const cookieHeader = `SESSDATA=${cred.sessdata}; bili_jct=${cred.bili_jct}; buvid3=${cred.buvid3}`
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
@@ -110,6 +117,13 @@ if (atMid) console.log(`     @节点: raw_text="@${atName ?? ''} "  type=2  biz_
 
 if (isDry) { console.log('\n[dry] 未上传、未发布（上传本身也是写操作，所以 dry 阶段一次请求都不发）。'); process.exit(0) }
 
+// 2026-10-21 修（外部审计 #9）：闸门必须在【上传图片之前】——
+//   上传本身就是写操作；先传后拦，等于图已经上去了才说"不行" ✗
+if (!gate({ type: 'dynamic', target: 'dynamic', auto: process.argv.includes('--auto') })) {
+  console.error('拒绝：限额闸不通过（额度 / 名单）—— 还没上传图片，未产生任何写入 ✓')
+  process.exit(2)
+}
+
 console.log('\n[1/2] 上传图片…')
 const fd = new FormData()
 const mime = kind === 'png' ? 'image/png' : kind === 'jpg' ? 'image/jpeg' : 'image/gif'
@@ -140,8 +154,7 @@ if (contents.length) dynReq.content = { contents }
 const body = JSON.stringify({ dyn_req: dynReq })
 console.log(`     content.contents = ${JSON.stringify(contents)}`)
 const qs = await wbi({ csrf: String(cred.bili_jct) })
-// P0-5（Kimi 评审 #5）：写通道也要过限额闸；不通过就停手
-if (!gate({ type: 'dynamic', target: 'dynamic', auto: process.argv.includes('--auto') })) { console.error('拒绝：限额闸不通过（额度/白名单）'); process.exit(2) }
+// 闸门已在上传前过 ✓（2026-10-21 挪走，见上 —— 上传本身也是写操作）
 const r = await fetch(`https://api.bilibili.com/x/dynamic/feed/create/dyn?${qs}`, {
   method: 'POST',
   headers: { 'user-agent': UA, referer: REF, origin: 'https://t.bilibili.com', 'content-type': 'application/json', cookie: cookieHeader },
