@@ -66,6 +66,21 @@ try {
   fs.writeFileSync(probe, 'ok'); fs.unlinkSync(probe)
   dirOk = true
 } catch {}
+// 2026-10-21 加（Issue #8-3）：没有 node 运行时 → 生物钟/监听/直播间全部停用，
+//   但以前体检不报这一项 ✗ 表面全绿、其实永远不会醒 ✗
+try {
+  const { NODE_EXE, isRealNode } = await import('../lib/nodebin.mjs')
+  const real = isRealNode()
+  items.push({
+    name: 'node 运行时',
+    ok: real,
+    detail: real ? NODE_EXE : ('这个不是 node：' + NODE_EXE + '（会静默返回空输出）'),
+    fix: '设置环境变量 DSH_NODE 指向 node 可执行文件的绝对路径，然后重启 DSH',
+  })
+} catch (e) {
+  items.push({ name: 'node 运行时', ok: false, detail: '检查失败：' + String(e?.message ?? e).slice(0, 80), fix: '设置 DSH_NODE' })
+}
+
 items.push({ name: '数据目录可写', ok: dirOk, detail: path.join(HOME, '.bili-ai'), fix: '检查该目录权限' })
 
 const bad = items.filter((i) => !i.ok)
