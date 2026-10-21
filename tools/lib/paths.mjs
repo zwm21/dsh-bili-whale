@@ -32,3 +32,8 @@ export const homePath = (...parts) => path.join(HOME, ...parts)
 
 /** 插件配置文件（保留 BILI_WHALE_CONFIG 覆盖）。 */
 export const configPath = process.env.BILI_WHALE_CONFIG || dshPath('bili-whale.config.json')
+
+// 2026-10-21（上游 v0.4.0）：凭据按【操作系统用户】放，和 DSH_HOME 无关 ✓
+//   scheduler.js 以前用 path.join(dshHome, '..', '.bili-ai', ...) 推 —— DSH_HOME
+//   被自定义（多 profile 根 / 便携安装 / CI）时就指到别处去了，凭据读写分叉 ✗
+export const credentialsPath = homePath('.bili-ai', 'credentials.json')
