@@ -15,6 +15,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { config } from '../lib/config.mjs'
+import { validateShare } from '../lib/share-policy.mjs'
 import { gate, record } from '../lib/quota-gate.mjs'
 
 const argv = process.argv.slice(2)
@@ -27,6 +28,15 @@ for (let i = 0; i < argv.length; i += 1) {
   }
 }
 const SHARE = !!opt.share       // ④ 分享型：占「分享 3 条/天」额度（与评论区 @ 共用 ✓）
+// 2026-10-21 修（上游 v0.4.0）：分享型私信以前【只过额度闸 gate()】，完全绕过
+//   share.enabled / minScore / --reason / --score / --rank ✗
+//   → 在设置里关掉「分享评论」总开关，评论区发不出去，私信却照样能发 ✗
+//   → 而且私信分享连"值不值"的评分都不要，质量标准被绕开 ✗
+//   现在和评论共用同一个 validateShare ✓（--status 是只读的，不拦）
+if (SHARE && !opt.status) {
+  try { validateShare(config(), opt) }
+  catch (e) { console.error(e.message); process.exit(2) }
+}
 // 分享型的 target 用正文里的 BV 号（"同一视频 7 天一次"才判得准 ✓）；没有就退回 dm:<mid>
 const BV = (String(opt.msg ?? "").match(/BV[0-9A-Za-z]{10}/) ?? [])[0] ?? "";
 // ⚠️ SHARE_TARGET 移到 ONLY_TO 定义之后（2026-10-19 修：原先在模块顶层引用 ONLY_TO，触发 TDZ
