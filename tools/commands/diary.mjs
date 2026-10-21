@@ -92,9 +92,15 @@ if (cmd === 'show' || !cmd) {
   console.log('\n【对外发言（今天）】')
   try {
     const q = JSON.parse(fs.readFileSync(QUOTA, 'utf8'))
-    const todayLog = (q.log ?? []).filter((x) => String(x.at).startsWith(today()))
+    // 2026-10-21 修（外部审计 #8）：账本里的 at 是 UTC ISO 串，直接 startsWith(本地日期)
+    //   会把凌晨 0–8 点的发言算到"昨天"✗（quota.mjs 早就修过同一个坑，这里漏了）
+    //   统一先把时间戳转成本地日期再比 ✓
+    const dayOf = (at) => new Date(at).toLocaleDateString('sv-SE')
+    const todayLog = (q.log ?? []).filter((x) => dayOf(x.at) === today())
     const auto = todayLog.filter((x) => x.auto).length
-    console.log(`  共 ${todayLog.length} 条（自主 ${auto}/${q.daily}，主人授权 ${todayLog.length - auto}）`)
+    // q.daily 早就不写盘了（save() 只持久化 {log}）→ 显示 undefined 会误导 ✗
+    const dailyCap = Number(q.daily ?? q.shareDaily ?? 0)
+    console.log(`  共 ${todayLog.length} 条（自主 ${auto}${dailyCap ? '/' + dailyCap : ''}，主人授权 ${todayLog.length - auto}）` + (dailyCap ? '' : ' · 自主发言不设条数上限 ✓'))
     for (const x of todayLog) console.log(`  · ${hhmm(x.at)}  ${x.type}${x.auto ? '（自主）' : ''}  ${x.target ?? ''}  ${x.note ?? ''}`)
     if (!todayLog.length) console.log('  （今天一条都没发）✓')
   } catch { console.log('  （还没有发言记录 —— 发第一条时 `quota record` 会自动建 quota.json）✓') }

@@ -18,8 +18,16 @@ import { dshPath } from '../lib/paths.mjs'
 
 const HOME = (process.env.USERPROFILE || process.env.HOME || '/')
 const FAV_LOG = path.join(HOME, '.bili-ai', 'favorites.json')
-const cred = JSON.parse(fs.readFileSync(path.join(HOME, '.bili-ai', 'credentials.json'), 'utf8'))
-const cfg = JSON.parse(fs.readFileSync(dshPath('bili-whale.config.json'), 'utf8'))
+// 2026-10-21 修（外部审计 #10）：新用户跑 `fav --list` 会因为缺文件直接一脸 ENOENT ✗
+//   改成友好提示：--list 不需要凭据（只读本地账本），其它子命令才要 ✓
+let cred = { sessdata: '', bili_jct: '', buvid3: '' }
+let cfg = {}
+try {
+  cred = JSON.parse(fs.readFileSync(path.join(HOME, '.bili-ai', 'credentials.json'), 'utf8'))
+} catch {}
+try {
+  cfg = JSON.parse(fs.readFileSync(dshPath('bili-whale.config.json'), 'utf8'))
+} catch {}
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 const cookie = `SESSDATA=${cred.sessdata}; bili_jct=${cred.bili_jct}; buvid3=${cred.buvid3 ?? ''}`
 const H = { 'user-agent': UA, referer: 'https://www.bilibili.com/', cookie }
@@ -128,6 +136,12 @@ const kind = String(opt.kind ?? '') || inferKind(reason)
 const bad = checkRules({ bv, reason, better: !!opt.better, kind })
 if (bad) { console.error(`✗ 不能收：${bad}`); process.exit(3) }
 
+// 写操作才需要凭据（--list / --check 不需要）
+if (!cred.sessdata || !cred.bili_jct) {
+  console.error('✗ 还没配置 B站 凭据，没法收藏')
+  console.error('  去设置页粘贴 SESSDATA + bili_jct 并保存（只读的 fav --list 不需要凭据 ✓）')
+  process.exit(2)
+}
 const info = await videoInfo(bv)
 const fav = await defaultFavId()
 console.log(`[fav] ${bv}  「${info.title.slice(0, 44)}」  @${info.up}`)
@@ -152,7 +166,15 @@ const r = await fetch('https://api.bilibili.com/x/v3/fav/resource/deal', {
 })
 const j = await r.json()
 if (j.code !== 0) {
-  console.error(`  ✗ 收藏失败：code=${j.code} ${j.message ?? ''}${j.code === -111 ? '（csrf 失效，重新登录一次）' : ''}`)
+  // 2026-10-21：把常见返回码翻译成人话 —— 裸的 -111 用户完全看不懂 ✗
+  const HINT = {
+    '-101': '账号未登录：SESSDATA 失效，重新复制一次 cookie',
+    '-111': 'CSRF 校验失败：bili_jct 和当前 SESSDATA 不是同一账号，或已过期 → 两个都重新复制一次',
+    '-352': '风控拦截：等几分钟再来',
+    10031: '操作太快：退避一会儿',
+    12015: '需要验证码：停下，去浏览器手动过一次',
+  }
+  console.error(`  ✗ 收藏失败：code=${j.code} ${HINT[String(j.code)] ?? (j.message ?? '未知错误')}`)
   process.exit(4)
 }
 

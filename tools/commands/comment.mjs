@@ -32,7 +32,12 @@ const ONCE = process.argv.includes('--once-per-person')
 const ONCE_DAYS = 30
 const REPLIED = path.join(process.env.USERPROFILE || process.env.HOME || '.', '.bili-ai', 'replied.json')
 const loadReplied = () => { try { return JSON.parse(fs.readFileSync(REPLIED, 'utf8')) } catch { return { byUid: {} } } }
-const saveReplied = (o) => { try { fs.mkdirSync(path.dirname(REPLIED), { recursive: true }); fs.writeFileSync(REPLIED, JSON.stringify(o, null, 2) + '\n') } catch {} }
+const saveReplied = (o) => { try { fs.mkdirSync(path.dirname(REPLED), { recursive: true }); fs.writeFileSync(REPLIED, JSON.stringify(o, null, 2) + '\n') } catch {} }
+// 2026-10-21：oncePerPerson 对主人豁免 —— 判重和记账两处都跳过 owner
+//   （上游 742e24c 提交信息里写了这条，但 comment.mjs 不在它的改动列表、实际没落地；
+//     这是我自己补的。没有它，"回主人一条"就把主人锁 30 天 ✗）
+const OWNER_MID = String(config().owner?.mid ?? '').trim()
+const isOwner = (mid) => !!OWNER_MID && String(mid ?? '').trim() === OWNER_MID
 // 查出"被回复的那个人"是谁（reply/reply 里 rpid === parent 的那条的作者）
 async function parentAuthor(aid, rootRpid, parentRpid) {
   for (let pn = 1; pn <= 4; pn += 1) {
@@ -134,6 +139,12 @@ if (ONCE) {
       console.error('  [once] 没查到被回复者的 uid → 判重状态未知，**这次不回**（fail-closed）')
       console.error('  （确认要回就别传 --once-per-person，或者先手工确认这个人没被回过）')
       process.exit(2)
+    } else if (isOwner(who.mid)) {
+      // 2026-10-21 修：oncePerPerson 必须对主人豁免 ✗→✓
+      //   加了这个开关，回主人一条就把主人锁 30 天 —— 主人之后再来评论全部被拒 ✗
+      //   （上游 742e24c 的提交信息里写了这一条，但 comment.mjs 不在它的改动列表里，
+      //     实际没落地；这里自己补上。）
+      console.log(`  [once] 被回复的是主人 → 这个开关对他豁免 ✓（不会被锁 30 天）`)
     } else {
       const led = loadReplied()
       const hist = (led.byUid?.[who.mid] ?? []).filter((x) => Date.now() - new Date(x.at).getTime() < ONCE_DAYS * 86_400_000)
@@ -260,7 +271,8 @@ if (out.code === 0) {
   if (ONCE && parent && root) {
     try {
       const who = await parentAuthor(oid, root, parent)
-      if (who?.mid) {
+      // 2026-10-21 修：主人不记账（否则"回主人一条"就把他锁 30 天 ✗）
+      if (who?.mid && !isOwner(who.mid)) {
         const led = loadReplied()
         led.byUid ??= {}
         led.byUid[who.mid] ??= []
