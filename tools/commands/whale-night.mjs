@@ -19,10 +19,15 @@
 //   }
 //   兼容旧配置：没有 windows 时，用 windowStart/windowEnd 当成"一个窗口"。
 //
-// 设计原则（2026-10-14 起，2026-10-17 扩成多窗口）：
-//   · **窗口固定，时刻随机** —— 机器才准点 ✗。每个窗口内随机挑一个时刻。
-//   · **窗口 = 一次醒来的机会**，但**每天合计 ≤ maxWakesPerDay**（默认 = 窗口数，硬上限 3）——
-//     窗口可以设四个，但不能醒四次（每次醒来都是一笔真开销）。
+// 设计原则（2026-10-14 起，2026-10-17 扩成多窗口，2026-10-21 改成"挑最近的窗口"）：
+//   · **挑最近时段的下一个窗口** —— 不再随机挑窗口 ✗
+//     随机挑的后果：剩余日程被扔到深夜，用户实测"配了 13 段 × 3 次，一天只醒来 2 次" ✗
+//     现在：按开始时刻排序，取**最早且还有次数的窗口** ✓ 完全确定、可预期 ✓
+//   · **时刻靠前 + 分钟级抖动** —— 窗口没开场 → 开场后 1–10 分钟；已在窗口里 → now 后 1–10 分钟。
+//     保留抖动是为了不像机器准点 ✗，但不再整个窗口随机（那会把醒拖到窗口末尾 ✗）。
+//   · **每天合计 ≤ Σ各窗口 wakes**（硬上限 99）——
+//     2026-10-21 把硬上限从 12 抬到 99：12 会把多窗口配置切掉一大半（13 段 × 3 次 = 39 → 只剩 12）✗
+//     窗口一个都没配 wakes 时，才回退 maxWakesPerDay → 再回退窗口数（旧配置兼容 ✓）。
 //   · **有权利不看** —— 每次醒来独立掷 skipChance（默认 30%），"今天不想看"也是活人 ✓
 //   · **有上限** —— 条数 + 分钟数写死在配置里，防烧白饭。
 import fs from 'node:fs'
@@ -48,6 +53,9 @@ const hhmm = (min) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String
 const parseHHMM = (s) => { const [h, m] = String(s).split(':').map(Number); return (h === 24 ? 1440 : h * 60) + (m || 0) }
 const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes() }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+// 2026-10-21：挑"最近时段"时，在最早可用时刻上加的分钟级抖动（1..NEAR_JITTER 分钟）。
+// 保留它是为了不像机器准点 ✗；想完全准点就把这个数改成 1。
+const NEAR_JITTER = 10
 
 const cfg = load(CFG, DEFAULTS)
 
@@ -77,8 +85,12 @@ function windowsOf(c) {
 }
 const WINDOWS = windowsOf(cfg)
 // 总次数 = 各窗口之和；一个窗口都没配次数 → 退回 maxWakesPerDay（旧配置）→ 再退回窗口数
+// ⚠️ 2026-10-21：硬上限 12 → 99。
+//   12 是 2026-10-17 的旧值，那会儿窗口还很少；现在 13 段 × 3 次 = 39 会被一刀切掉 2/3 ✗
+//   99 足够任何正常配置，同时仍然挡得住乱填的巨大数字 ✓
+const HARD_CAP_WAKES = 99
 const MAX_WAKES = Math.min(
-  12,
+  HARD_CAP_WAKES,
   Math.max(0, WINDOWS.reduce((s, w) => s + w.wakes, 0) || Number(cfg.maxWakesPerDay ?? WINDOWS.length) || WINDOWS.length),
 )
 
@@ -106,7 +118,11 @@ function makePlan() {
   const byUsed = (list) => list.filter((w) => (usedCount[w.label] ?? 0) < w.wakes)
   const pool = byUsed(open)
   if (!pool.length) return { date: today(), action: 'done', done: true, wakes: done, reason: '所有窗口的醒来次数都用完了' }
-  const w = pool[Math.floor(Math.random() * pool.length)]
+  // ── 2026-10-21：**挑最近时段的下一个窗口**（原来是从池子里随机挑一个 ✗）──────
+  //   随机的后果：今天剩下的几次全被扔到深夜，用户实测"设了很多次只观测到两次" ✗
+  //   现在：按开始时刻升序取第一个 → **最早且还有次数的窗口** ✓
+  //   （pool 已经滤掉了"已过点"和"次数用完"的窗口，所以这里只需要比 start ✓）
+  const w = pool.sort((a, b) => (a.start - b.start) || (a.end - b.end))[0]
 
   // ── 2026-10-20 重写（社区反馈 + 实测）──────────────────────────────
   //   旧逻辑：usedCount 先 +1 → 再判断 skip → skip 也把"醒来次数"吃掉了 ✗
@@ -127,19 +143,14 @@ function makePlan() {
     && String(st.window ?? '') === String(w.label)
   let at = keepSkipAt
     ? Number(st.at)
-    : w.start + Math.floor(Math.random() * Math.max(1, w.end - w.start))
+    // 2026-10-21：**最早可用时刻 + 分钟级抖动**（原来是在整个窗口里随机 ✗）
+    //   整个窗口随机会把醒拖到窗口末尾（10:00–11:00 能拖到 10:59）✗
+    //   现在：窗口没开场 → 开场后 1–10 分钟；窗口已开场 → now 之后 1–10 分钟 ✓
+    //   抖动是为了"不像机器准点"（原设计原则 ✓），但幅度压到分钟级 ✓
+    : Math.max(w.start, now) + 1 + Math.floor(Math.random() * Math.min(NEAR_JITTER, Math.max(1, w.end - w.start)))
+  // 别排到窗口外（窗口只剩几分钟时，抖动会把 at 顶到 end 之后 ✗）
+  if (!keepSkipAt) at = Math.min(at, w.end - 1)
   if (w.wrap && at >= 1440) at -= 1440   // 落在午夜后那段 → 折算回当天分钟
-  if (!keepSkipAt && at <= now) {
-    // 该窗口已开始 → 顺延一点点；顺延点必须仍在窗口内
-    at = now + 1 + Math.floor(Math.random() * 10)
-    if (at >= 1440) at -= 1440
-    if (w.wrap) {
-      const gapStart = w.end - 1440
-      if (at >= gapStart && at < w.start) at = w.start   // 落在缝里 → 推到下次开场
-    } else {
-      at = Math.min(w.end - 1, at)
-    }
-  }
 
   if (Math.random() < Number(cfg.skipChance ?? 0.3)) {
     return {
