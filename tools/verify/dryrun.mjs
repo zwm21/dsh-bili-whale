@@ -16,7 +16,7 @@ const get = async (url) => {
 const view = await get(`https://api.bilibili.com/x/web-interface/view?bvid=${BVID}`)
 if (view.code !== 0) {
   console.log(`view API code=${view.code} message=${view.message}`)
-  process.exit(0)
+  process.exit(4)   // 2026-10-21 修（外部审计 #7）：接口失败不该 exit 0
 }
 const d = view.data
 console.log('=== 视频 ===')

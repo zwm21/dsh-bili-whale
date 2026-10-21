@@ -47,7 +47,12 @@ const sheet = path.join(outDir, `${bvid}-${stamp}-${cols}x${rows}.jpg`)
 
 const r = await fetch(url, { headers: { 'user-agent': UA, referer: 'https://www.bilibili.com/', range: 'bytes=0-' } })
 if (!r.ok) { console.error(`下载失败 HTTP ${r.status}`); process.exit(5) }
-fs.writeFileSync(mp4, Buffer.from(await r.arrayBuffer()))
+// 2026-10-21 修（外部审计 #6）：原来是 Buffer.from(await r.arrayBuffer()) ——
+//   一条两小时 720p 视频就是 1–2GB 内存峰值 ✗ 改成流式写盘，内存占用恒定 ✓
+if (!r.body) { console.error('下载失败：响应没有 body'); process.exit(5) }
+const { pipeline } = await import('node:stream/promises')
+const { Readable } = await import('node:stream')
+await pipeline(Readable.fromWeb(r.body), fs.createWriteStream(mp4))
 console.log(`已下载: ${mp4}  (${(fs.statSync(mp4).size / 1024 / 1024).toFixed(2)} MB)`)
 
 // ── 取帧方式：优先"画面变化点"，不够再退回等间隔（2026-10-14 参考 K3 的做法）

@@ -66,17 +66,29 @@ const dm = await (async () => {
 })()
 console.log(dm ? `  弹幕 ${dm.length} 条: ${dm.slice(0, 20).join(' | ')}` : '  没取到弹幕')
 
-console.log('\n=== 简介里那个仓库（视频讲的大概率就是它） ===')
-const repo = 'T-Auto/dsh-ops'
-const meta = await (await fetch(`https://api.github.com/repos/${repo}`, { headers: { 'user-agent': 'dsh-recon' } })).json()
-if (meta.full_name) {
-  console.log(`  ${meta.full_name}  ★${meta.stargazers_count}  ${meta.pushed_at?.slice(0, 10)}  license=${meta.license?.spdx_id ?? 'NONE'}`)
-  console.log(`  ${meta.description ?? ''}`)
-  const readme = await (await fetch(`https://raw.githubusercontent.com/${repo}/${meta.default_branch}/README.md`, { headers: { 'user-agent': 'dsh-recon' } })).text()
-  const lines = readme.split('\n').filter((l) => l.trim() !== '')
-  console.log(`  README 前 25 行非空内容:`)
-  for (const l of lines.slice(0, 25)) console.log(`    ${l.slice(0, 130)}`)
-  console.log(`  README 关键词命中: ${['token', '省', '缓存', '压缩', 'subagent', 'workflow'].filter((k) => new RegExp(k, 'i').test(readme)).join(' / ')}`)
+// 2026-10-21 修（外部审计 #3）：这里原来写死 const repo = 'T-Auto/dsh-ops'，
+// 无论看什么视频都会去拉那个不相干仓库的 README —— 作者自用侦查脚本的残留 ✗
+// 改成：只有显式给 --repo <owner/name> 才查，否则跳过 ✓
+const wantRepo = (process.argv.find((a) => a.startsWith('--repo=')) ?? '').split('=')[1]
+  || (process.argv.includes('--repo') ? process.argv[process.argv.indexOf('--repo') + 1] : '')
+if (!wantRepo) {
+  console.log('\n=== 仓库信息（跳过）===')
+  console.log('  要给就加 --repo <owner/name>；不给就不猜 ✓')
 } else {
-  console.log(`  取不到: ${meta.message ?? ''}`)
+  const repo = wantRepo
+  const meta = await (await fetch(`https://api.github.com/repos/${repo}`, { headers: { 'user-agent': 'dsh-recon' } })).json()
+  if (!meta.full_name) {
+    console.log(`  取不到 ${repo}（code=${meta.message ?? '?'}）`)
+  } else {
+    console.log(`  ${meta.full_name}  ★${meta.stargazers_count}  ${meta.pushed_at?.slice(0, 10)}  license=${meta.license?.spdx_id ?? '-'}`)
+    console.log(`  ${meta.description ?? ''}`)
+    try {
+      const readme = await (await fetch(`https://raw.githubusercontent.com/${repo}/${meta.default_branch}/README.md`, { headers: { 'user-agent': 'dsh-recon' } })).text()
+      const lines = readme.split('\n').filter((l) => l.trim() !== '')
+      console.log('  README 前 25 行非空内容:')
+      for (const l of lines.slice(0, 25)) console.log('    ' + l.slice(0, 130))
+    } catch (e) {
+      console.log('  README 取不到：' + String(e.message).slice(0, 60))
+    }
+  }
 }
