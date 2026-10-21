@@ -15,6 +15,7 @@ import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { config } from '../lib/config.mjs'
+import { NODE_EXE } from '../lib/nodebin.mjs'   // 2026-10-21：别用 process.execPath（Electron 里它是主程序 ✗）
 
 // ── 限额闸（B 档「限额自主」的代码强制部分，2026-10-14 主人选 B 档）────────────────
 // 语义：闸门**只管自主发言**（带 --auto，即"她自己决定说的"）；主人当场授权的发言不拦 ✓
@@ -47,7 +48,7 @@ async function parentAuthor(aid, rootRpid, parentRpid) {
 }
 const quota = (args) => {
   try {
-    return { code: 0, out: execFileSync(process.execPath,
+    return { code: 0, out: execFileSync(NODE_EXE,
       [path.join(path.dirname(fileURLToPath(import.meta.url)), 'quota.mjs'), ...args], { encoding: 'utf8' }).trim() }
   } catch (e) { return { code: e.status ?? 1, out: String(e.stdout ?? e.message).trim() } }
 }
@@ -153,10 +154,15 @@ if (!fs.existsSync(credPath)) {
   process.exit(3)
 }
 const cred = JSON.parse(fs.readFileSync(credPath, 'utf8'))
-const missing = ['sessdata', 'bili_jct', 'buvid3'].filter((k) => !cred[k] || String(cred[k]).trim() === '')
+// 2026-10-21 修：buvid3 不该是必填 ✗ —— 没有它的用户会被这里直接 exit 3，评论永远发不出去
+//   （B站 大部分写接口不需要 buvid3；缺了只影响个别接口）
+const missing = ['sessdata', 'bili_jct'].filter((k) => !cred[k] || String(cred[k]).trim() === '')
 if (missing.length) {
   console.error(`credentials file is missing values for: ${missing.join(', ')}`)
   process.exit(3)
+}
+if (!cred.buvid3 || String(cred.buvid3).trim() === '') {
+  console.error('⚠️ 没有 buvid3（不影响评论；个别接口可能被风控）—— 想补就在 F12 → Cookies 里复制 buvid3')
 }
 const cookieHeader = `SESSDATA=${cred.sessdata}; bili_jct=${cred.bili_jct}; buvid3=${cred.buvid3}`
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
@@ -277,7 +283,7 @@ if (out.code === 0) {
   if (AUTO || SHARE) {
     try {
       const msg = `[${SHARE ? '分享型·@主人' : '自主发言'}] 评论已发出 rpid=${rpid}\n目标：${bvid ? 'BV:' + bvid : 'oid:' + oid}\n内容：${message.slice(0, 80)}`
-      execFileSync(process.execPath,
+      execFileSync(NODE_EXE,
         [path.join(path.dirname(fileURLToPath(import.meta.url)), 'notify.mjs'), msg, '--title', SHARE ? '分享评论报备' : '自主发言报备'],
         { stdio: 'inherit' })
     } catch (e) {

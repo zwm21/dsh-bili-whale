@@ -4,6 +4,7 @@
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { NODE_EXE } from './lib/nodebin.mjs'   // 2026-10-21：别用 process.execPath（Electron 里它是主程序 ✗）
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const map = {
@@ -104,5 +105,5 @@ if (!entry) {
   console.error(`未知命令: ${cmd}\n跑 "node bili.mjs help" 看清单。`)
   process.exit(2)
 }
-const r = spawnSync(process.execPath, [path.join(here, entry[0]), ...translateNamed(cmd, rest)], { stdio: 'inherit' })
+const r = spawnSync(NODE_EXE, [path.join(here, entry[0]), ...translateNamed(cmd, rest)], { stdio: 'inherit' })
 process.exit(r.status ?? 1)

@@ -6,12 +6,13 @@
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { NODE_EXE } from './nodebin.mjs'   // 2026-10-21：别用 process.execPath（Electron 里它是主程序 ✗）
 
 const QUOTA = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'commands', 'quota.mjs')
 
 function run(args) {
   try {
-    return { code: 0, out: execFileSync(process.execPath, [QUOTA, ...args], { encoding: 'utf8' }).trim() }
+    return { code: 0, out: execFileSync(NODE_EXE, [QUOTA, ...args], { encoding: 'utf8' }).trim() }
   } catch (e) {
     return { code: e.status ?? 1, out: String(e.stdout ?? e.message).trim() }
   }

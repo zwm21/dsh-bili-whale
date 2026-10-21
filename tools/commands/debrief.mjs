@@ -19,6 +19,7 @@ import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { config } from '../lib/config.mjs'
 import { dshPath } from '../lib/paths.mjs'
+import { NODE_EXE } from '../lib/nodebin.mjs'   // 2026-10-21：别用 process.execPath（Electron 里它是主程序 ✗）
 
 
 const argv = process.argv.slice(2)
@@ -211,7 +212,7 @@ if (!opt['no-frames']) {
   try {
     // ⚠️ 必须用 fileURLToPath：用 URL.pathname 会把路径里的空格变成 %20（实测踩过）
     const watch = path.join(path.dirname(fileURLToPath(import.meta.url)), 'bili-watch.mjs')
-    const out = execFileSync(process.execPath, [watch, bvid, GRID], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
+    const out = execFileSync(NODE_EXE, [watch, bvid, GRID], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
     for (const line of out.split('\n')) if (/^(SHEET|SUBS|实际画质|取帧方式)/.test(line)) console.log(line)
     sheet = (out.split('\n').find((l) => l.startsWith('SHEET:')) || '').slice(6).trim() || null
   } catch (e) { console.log(`（抽帧失败：${String(e.message).slice(0, 200)}）`) }

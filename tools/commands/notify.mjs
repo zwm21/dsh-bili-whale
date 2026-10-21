@@ -19,6 +19,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { config } from '../lib/config.mjs'
+import { NODE_EXE } from '../lib/nodebin.mjs'   // 2026-10-21：别用 process.execPath（Electron 里它是主程序 ✗）
 
 const argv = process.argv.slice(2)
 const DRY = argv.includes('--dry')
@@ -157,13 +158,17 @@ try {
     //   私信自带三道闸（只发主人 / 必须互相关注 / 一天只锁定一个收信人）；失败只提示，不抛 ✗
     // 2026-10-19：DSH 的 Windows 沙箱禁止捕获子进程输出（管道 → EPERM）——
     //   用文件句柄重定向拿输出（不走管道），再原样转贴到 stdout/stderr。
+    // 2026-10-21 修（上游 3640d34 P1-1）：原来这里写死 --go，且没有 DRY 判断 ✗
+    //   → notify "…" --dry 在 type=dm 时会【真的发出私信】✗ 预演变真发
+    // 注意：这里在模块顶层，不能用 return ✗ → 用 exit(0)（预演到此为止 ✓）
+    if (DRY) { console.log('[dry] B站私信（不发送）：' + String(text).slice(0, 80)); process.exit(0) }
     const dmPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'dm.mjs')
     const outF = path.join(os.tmpdir(), `whale-dm-out-${process.pid}-${Date.now()}.txt`)
     const errF = path.join(os.tmpdir(), `whale-dm-err-${process.pid}-${Date.now()}.txt`)
     const fdO = fs.openSync(outF, 'w'); const fdE = fs.openSync(errF, 'w')
     let r
     try {
-      r = spawnSync(process.execPath, [dmPath, '--msg', String(text), '--go'], { stdio: ['ignore', fdO, fdE], timeout: 90000 })
+      r = spawnSync(NODE_EXE, [dmPath, '--msg', String(text), '--go'], { stdio: ['ignore', fdO, fdE], timeout: 90000 })
     } finally {
       try { fs.closeSync(fdO) } catch {}
       try { fs.closeSync(fdE) } catch {}

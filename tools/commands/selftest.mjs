@@ -11,6 +11,7 @@ import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dshPath } from '../lib/paths.mjs'
+import { NODE_EXE } from '../lib/nodebin.mjs'   // 2026-10-21：别用 process.execPath（Electron 里它是主程序 ✗）
 
 
 const HOME = (process.env.USERPROFILE || process.env.HOME || '/')
@@ -46,7 +47,7 @@ try {
   const cred = JSON.parse(fs.readFileSync(CRED, 'utf8'))
   const has = !!cred.sessdata && !!cred.bili_jct
   line(has ? OK : NO, 'B站凭据', has ? '已保存（cookie）' : '缺 sessdata / bili_jct')
-  line(cred.buvid3 ? OK : WARN, 'buvid3', cred.buvid3 ? '有' : '缺（部分接口可能被拦，跑一次 `node bili.mjs session` 会补）')
+  line(cred.buvid3 ? OK : WARN, 'buvid3', cred.buvid3 ? '有' : '缺 —— 不影响评论/私信；个别接口可能被风控。想要就 F12 → Cookies 复制 buvid3 再写入')
 } catch {
   line(NO, 'B站凭据', '没有 ' + CRED + ' —— 设置页粘贴 cookie 后保存')
 }
@@ -54,7 +55,7 @@ try {
 // ③ 登录态
 try {
   const BILI0 = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bili.mjs')
-  const out = execFileSync(process.execPath, [BILI0, 'session'], { encoding: 'utf8', timeout: 30000 })
+  const out = execFileSync(NODE_EXE, [BILI0, 'session'], { encoding: 'utf8', timeout: 30000 })
   const who = out.match(/账号\s*:\s*(.+)/) ?? []
   const midM = out.match(/mid\s*:\s*(\d+)/) ?? []
   line(who[1] ? OK : NO, '登录态', who[1] ? `${who[1].trim()}（mid ${midM[1] ?? '?'}）` : String(out).trim().slice(0, 80))
@@ -73,7 +74,7 @@ line(fs.existsSync(DIARY) ? OK : WARN, '日记', fs.existsSync(DIARY) ? '已存�
 // ⑤ 依赖体检（直接调现成的 deps，别在这里重复实现 ✗）
 try {
   const BILI2 = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bili.mjs')
-  const out = execFileSync(process.execPath, [BILI2, 'deps'], { encoding: 'utf8', timeout: 60000 })
+  const out = execFileSync(NODE_EXE, [BILI2, 'deps'], { encoding: 'utf8', timeout: 60000 })
   const reds = (String(out).match(/✗/g) ?? []).length
   line(reds === 0 ? OK : NO, '依赖体检（deps）', reds === 0 ? '全绿' : `${reds} 项红 —— 详见 \`node bili.mjs deps\``)
 } catch (e) {

@@ -15,6 +15,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { config } from '../lib/config.mjs'
+import { NODE_EXE } from '../lib/nodebin.mjs'   // 2026-10-21：别用 process.execPath（Electron 里它是主程序 ✗）
 
 const FILE = path.join((process.env.USERPROFILE || process.env.HOME || '/'), '.bili-ai', 'quota.json')
 // 额度与白名单优先来自统一配置（lib/config.mjs）；本文件自己的 quota.json 仍是运行账本
@@ -194,7 +195,7 @@ if (cmd === 'react' && opt.auto) {
     const found = []
     // ① 回复
     try {
-      const out = execFileSync(process.execPath, [here('./comment-digest.mjs'), '--hours', hours, '--pages', '1'], { encoding: 'utf8' })
+      const out = execFileSync(NODE_EXE, [here('./comment-digest.mjs'), '--hours', hours, '--pages', '1'], { encoding: 'utf8' })
       const ownerName = String(config().owner?.name ?? '')
       const ownerMid = String(config().owner?.mid ?? '')
       if ((ownerName && out.includes(ownerName)) || (ownerMid && out.includes(ownerMid))) {
@@ -206,7 +207,7 @@ if (cmd === 'react' && opt.auto) {
     } catch { /* 收件箱失败不影响点赞这一路 */ }
     // ② 点赞（--json 里 ownerLiked 是确定数字，比抠文本稳）
     try {
-      const js = execFileSync(process.execPath, [here('./likes.mjs'), '--owner', '--json', '--hours', hours], { encoding: 'utf8' })
+      const js = execFileSync(NODE_EXE, [here('./likes.mjs'), '--owner', '--json', '--hours', hours], { encoding: 'utf8' })
       const o = JSON.parse(js)
       const ownerMid2 = String(config().owner?.mid ?? '')
       if (Number(o.ownerLiked ?? 0) > 0) {
